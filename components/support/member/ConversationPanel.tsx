@@ -2,6 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRealtimeMessages } from '@/lib/support/hooks/useRealtimeMessages';
+import { useTypingIndicator } from '@/lib/support/hooks/useTypingIndicator';
+import { ClosedConversationPanel } from './ClosedConversationPanel';
+import { WaitingForAgent } from './WaitingForAgent';
+import { TypingDots } from '@/components/support/shared/TypingDots';
 import type { Conversation } from '@/types/support';
 
 interface Props {
@@ -16,21 +20,29 @@ export function ConversationPanel({ conversation, onReopen, reopening, reopenErr
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const { messages } = useRealtimeMessages(conversation.id, '/api/member/support/conversations');
+  const { otherTyping: agentTyping, notifyTyping, notifyStoppedTyping } = useTypingIndicator(
+    conversation.id,
+    'member'
+  );
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, agentTyping]);
 
-  // Clear any in-progress draft when switching threads so it never leaks
-  // into the wrong conversation.
   useEffect(() => {
     setDraft('');
   }, [conversation.id]);
+
+  function handleDraftChange(value: string) {
+    setDraft(value);
+    if (value.trim()) notifyTyping();
+  }
 
   async function sendMessage() {
     if (!draft.trim()) return;
     const body = draft.trim();
     setDraft('');
+    notifyStoppedTyping();
     await fetch(`/api/member/support/conversations/${conversation.id}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -42,7 +54,10 @@ export function ConversationPanel({ conversation, onReopen, reopening, reopenErr
   const isClosed = conversation.status === 'closed';
   const isArchived = conversation.status === 'archived';
   const canReopen = isClosed && !conversation.has_been_reopened;
-  const alreadyReopenedAndClosedAgain = isClosed && conversation.has_been_reopened;
+  const alreadyReopened = isClosed && conversation.has_been_reopened;
+
+  const hasAgentReply = messages.some((m) => m.sender_role === 'agent');
+  const showWaiting = isActive && !hasAgentReply;
 
   return (
     <div className="flex h-full flex-1 flex-col bg-white">
@@ -70,18 +85,34 @@ export function ConversationPanel({ conversation, onReopen, reopening, reopenErr
             </div>
           );
         })}
+
+        {showWaiting && <WaitingForAgent />}
+
+        {/* "Support agent is typing…" only makes sense once an agent has
+            actually joined the thread; before that it's covered by the
+            waiting state above. */}
+        {isActive && hasAgentReply && agentTyping && (
+          <div className="flex justify-start">
+            <div className="flex items-center gap-2 rounded-2xl bg-slate-100 px-3 py-2 text-xs text-slate-500">
+              <span>Our agent is typing…</span>
+              <TypingDots className="text-slate-400" />
+            </div>
+          </div>
+        )}
+
         <div ref={bottomRef} />
       </div>
 
-      {/* Input only exists while active — it disappears entirely (not
-          just disabled) the instant status flips to closed/archived,
-          since that flows in live via useRealtimeMemberConversations. */}
+      {/* Input only exists while active — disappears entirely (not just
+          disabled) the instant status flips to closed/archived, since the
+          parent's live conversation list re-renders this immediately. */}
       {isActive && (
         <div className="flex gap-2 border-t border-slate-200 p-3">
           <input
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => handleDraftChange(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+            onBlur={() => !draft.trim() && notifyStoppedTyping()}
             placeholder="Type a message…"
             className="flex-1 rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
           />
@@ -94,26 +125,14 @@ export function ConversationPanel({ conversation, onReopen, reopening, reopenErr
         </div>
       )}
 
-      {canReopen && (
-        <div className="border-t border-slate-200 p-3 text-center">
-          {reopenError && <p className="mb-2 text-xs text-red-600">{reopenError}</p>}
-          <button
-            onClick={onReopen}
-            disabled={reopening}
-            className="rounded-md bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:bg-slate-300"
-          >
-            {reopening ? 'Reopening…' : 'Reopen Case'}
-          </button>
-        </div>
-      )}
-
-      {alreadyReopenedAndClosedAgain && (
-        <div className="border-t border-slate-200 bg-slate-50 p-3 text-center">
-          <p className="text-xs text-slate-500">
-            This conversation has already been reopened once. Please start a new conversation
-            for further assistance.
-          </p>
-        </div>
+      {isClosed && (
+        <ClosedConversationPanel
+          canReopen={canReopen}
+          alreadyReopened={alreadyReopened}
+          onReopen={onReopen}
+          reopening={reopening}
+          reopenError={reopenError}
+        />
       )}
 
       {isArchived && (
