@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRealtimeMessages } from '@/lib/support/hooks/useRealtimeMessages';
+import { useTypingIndicator } from '@/lib/support/hooks/useTypingIndicator';
+import { TypingDots } from '@/components/support/shared/TypingDots';
 import type { Conversation, ConversationStatus } from '@/types/support';
 import { StatusBadge } from './StatusBadge';
 
@@ -12,6 +14,10 @@ interface Props {
 
 export function ChatWindow({ conversation, onStatusChange }: Props) {
   const { messages, loading } = useRealtimeMessages(conversation?.id ?? null, '/api/support/conversations');
+  const { otherTyping: memberTyping, notifyTyping, notifyStoppedTyping } = useTypingIndicator(
+    conversation?.id ?? null,
+    'agent'
+  );
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -31,9 +37,15 @@ export function ChatWindow({ conversation, onStatusChange }: Props) {
   const isArchived = conversation.status === 'archived';
   const isClosed = conversation.status === 'closed';
 
+  function handleDraftChange(value: string) {
+    setDraft(value);
+    if (value.trim()) notifyTyping();
+  }
+
   async function sendReply() {
     if (!draft.trim() || !conversation) return;
     setSending(true);
+    notifyStoppedTyping();
     await fetch(`/api/support/conversations/${conversation.id}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -45,39 +57,37 @@ export function ChatWindow({ conversation, onStatusChange }: Props) {
 
   return (
     <div className="flex flex-1 flex-col bg-slate-50">
-      <header className="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3">
-        <div>
-          <p className="text-sm font-semibold text-slate-900">
-            {conversation.member_name ?? conversation.visitor_name ?? 'Conversation'}
-          </p>
-          <StatusBadge status={conversation.status} />
-        </div>
-        <div className="flex gap-2">
-          {conversation.status === 'active' && (
-            <button
-              onClick={() => onStatusChange(conversation.id, 'closed')}
-              className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-            >
-              Close conversation
-            </button>
-          )}
-          {isClosed && (
-            <>
+      <header className="border-b border-slate-200 bg-white px-5 py-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">
+              {conversation.member_name ?? conversation.visitor_name ?? 'Conversation'}
+            </p>
+            <StatusBadge status={conversation.status} />
+          </div>
+          <div className="flex gap-2">
+            {conversation.status === 'active' && (
               <button
-                onClick={() => onStatusChange(conversation.id, 'active')}
+                onClick={() => onStatusChange(conversation.id, 'closed')}
                 className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
               >
-                Reopen
+                Close conversation
               </button>
+            )}
+            {isClosed && (
               <button
                 onClick={() => onStatusChange(conversation.id, 'archived')}
                 className="rounded-md bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700"
               >
                 Archive
               </button>
-            </>
-          )}
+            )}
+          </div>
         </div>
+        {/* Member typing indicator, directly below the header as specified */}
+        {conversation.status === 'active' && memberTyping && (
+          <p className="mt-1 text-xs italic text-slate-400">Member is typing…</p>
+        )}
       </header>
 
       <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -115,15 +125,18 @@ export function ChatWindow({ conversation, onStatusChange }: Props) {
           <div className="flex gap-2">
             <textarea
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => handleDraftChange(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   sendReply();
                 }
               }}
+              onBlur={() => !draft.trim() && notifyStoppedTyping()}
               rows={1}
-              placeholder={isClosed ? 'Reopen the conversation to reply' : 'Type a reply…'}
+              placeholder={
+                isClosed ? 'This conversation is closed — the member can reopen it' : 'Type a reply…'
+              }
               disabled={isClosed || sending}
               className="flex-1 resize-none rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500 disabled:bg-slate-50 disabled:text-slate-400"
             />

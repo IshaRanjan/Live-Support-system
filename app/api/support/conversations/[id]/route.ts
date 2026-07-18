@@ -3,10 +3,14 @@ import { getAgentSession } from '@/lib/support/agent-session';
 import { createServiceClient } from '@/lib/supabase/service';
 import type { ConversationStatus } from '@/types/support';
 
+// Agents can only move a conversation forward: active -> closed -> archived.
+// Reopening (closed -> active) is member-only now — see
+// /api/member/support/conversations/[id]/reopen — and is capped at once
+// per conversation via `has_been_reopened`.
 const ALLOWED_TRANSITIONS: Record<ConversationStatus, ConversationStatus[]> = {
   active: ['closed'],
-  closed: ['archived', 'active'], // reopen goes back to active
-  archived: [], // archived is a one-way door, matching the purge-exemption design
+  closed: ['archived'],
+  archived: [],
 };
 
 export async function GET(
@@ -56,10 +60,6 @@ export async function PATCH(
   const update: Record<string, unknown> = { status: nextStatus };
   if (nextStatus === 'closed') update.closed_at = new Date().toISOString();
   if (nextStatus === 'archived') update.archived_at = new Date().toISOString();
-  if (nextStatus === 'active' && currentStatus === 'closed') {
-    // Reopening clears closed_at so it's no longer a purge candidate.
-    update.closed_at = null;
-  }
 
   const { data, error } = await supabase
     .from('conversations')

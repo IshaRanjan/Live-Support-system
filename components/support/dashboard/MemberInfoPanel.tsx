@@ -37,6 +37,14 @@ export function MemberInfoPanel({ conversation }: { conversation: Conversation |
           <dt className="text-xs uppercase tracking-wide text-slate-400">Status</dt>
           <dd className="mt-1"><StatusBadge status={conversation.status} /></dd>
         </div>
+        {conversation.has_been_reopened && (
+          <div>
+            <dt className="text-xs uppercase tracking-wide text-slate-400">Reopened</dt>
+            <dd className="mt-0.5 text-xs text-amber-600">
+              This conversation has already used its one-time reopen.
+            </dd>
+          </div>
+        )}
         <div>
           <dt className="text-xs uppercase tracking-wide text-slate-400">Started</dt>
           <dd className="mt-0.5 text-slate-800">

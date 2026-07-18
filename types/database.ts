@@ -22,6 +22,7 @@ export interface Database {
           updated_at: string;
           closed_at: string | null;
           archived_at: string | null;
+          has_been_reopened: boolean;
         };
         Insert: Partial<Database['public']['Tables']['conversations']['Row']>;
         Update: Partial<Database['public']['Tables']['conversations']['Row']>;

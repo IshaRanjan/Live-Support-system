@@ -15,7 +15,7 @@ export async function GET() {
     .select('*')
     .eq('type', 'member_support')
     .eq('member_id', mockMember.id)
-    .order('created_at', { ascending: false });
+    .order('updated_at', { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ conversations: data });
