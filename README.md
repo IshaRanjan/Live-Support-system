@@ -21,66 +21,7 @@ future-proofed for Visitor Support" below.
 - No Supabase Auth — the single support agent logs in with env-var
   credentials via a signed HTTP-only cookie session (per spec)
 
-## 1. Install dependencies
-
-```bash
-npm install
-```
-
-## 2. Create a Supabase project
-
-If you don't have one already: [supabase.com](https://supabase.com) → New
-Project. Once it's ready, go to **Project Settings → API** and grab:
-
-- Project URL
-- `anon` public key
-- `service_role` secret key (click "Reveal")
-
-## 3. Set environment variables
-
-```bash
-cp .env.example .env.local
-```
-
-Fill in:
-
-```
-NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-SUPABASE_SERVICE_ROLE_KEY=...        # server-only, never exposed to the client
-
-SUPPORT_AGENT_USERNAME=agent
-SUPPORT_AGENT_PASSWORD=pick-something-real
-
-SUPPORT_SESSION_SECRET=$(openssl rand -hex 32)
-CRON_SECRET=$(openssl rand -hex 32)
-```
-
-## 4. Run the database migration
-
-Easiest path — paste `supabase/migrations/0001_init.sql` into the Supabase
-dashboard's **SQL Editor** and run it.
-
-Or, with the Supabase CLI linked to your project:
-
-```bash
-supabase db push
-```
-
-This creates `conversations`, `messages`, and `support_agents`, enables
-Realtime on the first two, and sets up RLS. **Read the comment block above
-the RLS policies in that file** — it explains a deliberate tradeoff (broad
-read access so Realtime works without real member auth yet) and what to
-tighten once real membership is wired in.
-
-## 5. Run it
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) — it links to both entry
-points:
+## The entrypoints
 
 - **Member view** (`/dashboard/support`) — start or continue a Live Support
   chat as the mock member.
@@ -97,34 +38,7 @@ Closed (not archived) conversations should auto-delete 72 hours after
 closing. The database function `purge_expired_conversations()` does the
 deletion; something needs to call it on a schedule. Options, easiest first:
 
-**Option A — Supabase `pg_cron` (runs inside Postgres, no external infra):**
-Enable the `pg_cron` extension in the Supabase dashboard (Database →
-Extensions), then run:
-
-```sql
-select cron.schedule(
-  'purge-conversations',
-  '0 * * * *', -- hourly
-  'select purge_expired_conversations()'
-);
-```
-
-**Option B — hit the API route on a schedule** (e.g. Vercel Cron once you
-deploy there, a GitHub Actions scheduled workflow, or any external cron
-service):
-
-```
-GET /api/cron/purge-conversations
-Authorization: Bearer <CRON_SECRET>
-```
-
-If deploying to Vercel, add a `vercel.json`:
-
-```json
-{
-  "crons": [{ "path": "/api/cron/purge-conversations", "schedule": "0 * * * *" }]
-}
-```
+**Supabase `pg_cron` (runs inside Postgres, no external infra)**
 
 ## Project structure
 
@@ -181,20 +95,3 @@ middleware.ts                       Fast-redirect for unauthenticated dashboard 
   vs. member fields.
 - `assigned_agent_id` exists now even with one agent, so multi-agent
   assignment later doesn't need a schema change either.
-
-## Integrating into your main app
-
-When you're ready to move this into your Member Dashboard:
-
-1. Copy `components/support/`, `lib/support/`, `lib/supabase/`,
-   `types/`, `app/api/support/`, `app/api/member/support/`,
-   `app/api/cron/`, `app/support/`, `middleware.ts`, and
-   `supabase/migrations/0001_init.sql` into your main project.
-2. If your main app already has Supabase clients set up, you likely only
-   need `lib/supabase/service.ts` from here (and can skip/merge
-   `client.ts`/`server.ts`).
-3. Mount `<MemberSupportChat isMember={isMember} />` wherever it belongs in
-   your real Member Dashboard, swapping `lib/support/mock-member.ts` for
-   your real purchase/session-booking check.
-4. Delete `app/dashboard/support/page.tsx` and `app/page.tsx` — those only
-   exist as demo entry points for running this standalone.
